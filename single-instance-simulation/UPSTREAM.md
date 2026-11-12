@@ -1,16 +1,23 @@
-# LLMServingSim 上游源码说明
+# LLMServingSim 上游源码
 
-本地研究包中包含一个 LLMServingSim 源码快照（约 53 MB 压缩），解压后的完整项目及 profiler / workload 数据更大。为避免把大型第三方源码快照和实验数据误当成本项目原创代码，本仓库不重复托管该归档。
+本项目已在 `single-instance-simulation/third_party/LLMServingSim` 配置 Git submodule，指向：
 
-请从上游项目获取源码，并遵循其 LICENSE 与数据集/模型各自的许可条款：
+- 上游仓库：https://github.com/casys-kaist/LLMServingSim
+- 固定 commit：`49df63f2af61230da63dd2136044a2dbf9bd4161`
 
-- LLMServingSim：请以原始上传归档内的 Git 元数据、README 或项目主页为准。
-- 本仓库的 `single_instance_sim.py` 是本项目的独立合成离散事件仿真脚本，不是 LLMServingSim 的修改版。
-
-若需将 LLMServingSim 作为子模块引入，请先核对原始归档中的 `.gitmodules` 和 upstream remote，再执行：
+完整克隆（包括上游源码）：
 
 ```bash
-git submodule add <verified-upstream-url> third_party/LLMServingSim
+git clone --recurse-submodules https://github.com/shawnke2025-NUS/Alibaba.git
 ```
 
-不要在未核验来源和许可前直接公开上传整个第三方快照。
+如果已经 clone 主仓库但没有拉取子模块：
+
+```bash
+git submodule update --init --recursive
+```
+
+说明：
+- 使用 submodule 是为了保留上游作者和许可边界，避免把第三方项目误标为本项目原创。
+- 用户提供的压缩包内还包含一个 LLMServingSim 源码快照归档；该快照并未作为本仓库的独立二进制文件重复上传。此处 submodule 固定到上游仓库的一个明确 commit，便于 clone 和复现，但不保证与用户上传的 zip 快照逐字节一致。
+- 使用上游源码前请遵循其 LICENSE，以及模型、trace、profiler 数据各自的使用许可。
