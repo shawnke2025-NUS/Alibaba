@@ -1,0 +1,3 @@
+[submodule "LLMServingSim"]
+	path = single-instance-simulation/third_party/LLMServingSim
+	url = https://github.com/casys-kaist/LLMServingSim.git
