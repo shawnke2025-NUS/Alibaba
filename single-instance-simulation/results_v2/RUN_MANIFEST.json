@@ -1,0 +1,24 @@
+{
+  "branch": "v2-phase1-phase2",
+  "runtime_model": "SyntheticCostModel",
+  "hardware_calibration": false,
+  "horizon_seconds": 45,
+  "seeds_per_workload_policy": 5,
+  "workloads": [
+    "low",
+    "medium",
+    "high",
+    "overload"
+  ],
+  "policies": [
+    "fixed256",
+    "fixed1024",
+    "gpu_threshold",
+    "deadline_adaptive",
+    "priority_deadline"
+  ],
+  "runs_expected": 100,
+  "runs_actual": 100,
+  "trace_pairing": "same workload+seed trace across all policies",
+  "notes": "Synthetic simulation only; not RTX 3090/Qwen3-32B measured performance."
+}
