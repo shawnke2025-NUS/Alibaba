@@ -72,9 +72,10 @@ class SimulatorTests(unittest.TestCase):
     def test_priority_deadline_policy_uses_request_slack(self):
         trace = [Request(0, 0.0, 4096, 8), Request(1, 0.0, 512, 8)]
         config = SimulationConfig(horizon_s=1.0, max_drain_s=30.0)
-        result = simulate("low", "priority_deadline", 1, config, FixedRuntime(), trace)
-        self.assertEqual(result["arrivals"], 2)
-        self.assertEqual(result["completed"], 2)
+        fcfs = simulate("low", "fixed256", 1, config, FixedRuntime(), trace)
+        priority = simulate("low", "priority_deadline", 1, config, FixedRuntime(), trace)
+        self.assertEqual(fcfs["arrivals"], priority["arrivals"])
+        self.assertEqual(priority["completed"], 2)
 
 
 class RuntimeTests(unittest.TestCase):
@@ -104,6 +105,24 @@ class RuntimeTests(unittest.TestCase):
         self.assertGreater(predictor.predict_ms(4, 256, 1024, 0), 0)
         self.assertGreater(predictor.predict_ms(2, 128, 1024, 0), 0)
 
+    def test_profile_predictor_does_not_mix_execution_modes(self):
+        rows = []
+        for mode, latency in (("mixed", 20.0), ("prefill", 5.0)):
+            for repeat in range(4):
+                rows.append({
+                    "active_decode_batch": 1,
+                    "prefill_chunk_tokens": 256,
+                    "max_context_tokens": 1024,
+                    "kv_cache_tokens": 0,
+                    "mode": mode,
+                    "repeat": repeat,
+                    "iteration_ms": latency + repeat * 0.01,
+                })
+        predictor = P99LookupPredictor(summarize_profile(pd.DataFrame(rows)))
+        self.assertGreater(predictor.predict_ms(1, 256, 1024, 0, mode="mixed"), 15.0)
+        with self.assertRaises(ValueError):
+            predictor.predict_ms(1, 256, 1024, 0, mode="decode")
+
     def test_profile_csv_validation(self):
         frame = pd.DataFrame([{
             "active_decode_batch": 1,
@@ -120,8 +139,19 @@ class RuntimeTests(unittest.TestCase):
 
     def test_profiling_mesh_size(self):
         mesh = generate_profiling_mesh((0, 1), (0, 256), (1024,), (0,), repeats=3)
-        self.assertEqual(len(mesh), 12)
+        self.assertEqual(len(mesh), 3)
+        self.assertTrue((mesh["active_decode_batch"] > 0).all())
+        self.assertTrue((mesh["prefill_chunk_tokens"] > 0).all())
         self.assertTrue(mesh["iteration_ms"].isna().all())
+
+    def test_profiling_mesh_modes_are_separated(self):
+        common = dict(decode_batches=(0, 2), chunks=(0, 256), contexts=(1024,), kv_cache_tokens=(0,), repeats=1)
+        prefill = generate_profiling_mesh(**common, mode="prefill")
+        decode = generate_profiling_mesh(**common, mode="decode")
+        mixed = generate_profiling_mesh(**common, mode="mixed")
+        self.assertTrue((prefill["active_decode_batch"] == 0).all())
+        self.assertTrue((decode["prefill_chunk_tokens"] == 0).all())
+        self.assertTrue(((mixed["active_decode_batch"] > 0) & (mixed["prefill_chunk_tokens"] > 0)).all())
 
 
 if __name__ == "__main__":

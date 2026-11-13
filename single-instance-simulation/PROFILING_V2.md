@@ -6,16 +6,16 @@ Replace the V1 hand-written latency expression with a predictor fitted to measur
 
 ## Profiling dimensions
 
-Default mesh:
+Default mesh dimensions:
 
 - Active Decode Batch: `0, 1, 2, 4, 8, 16, 32, 64`
 - Prefill Chunk: `0, 128, 256, 512, 1024, 2048, 4096, 8192`
 - Maximum Context: `512, 2048, 4096, 8192, 16384, 32768, 65536`
 - KV Cache Tokens: `0, 8192, 32768, 65536`
 - Repeats: 5 per mesh point
-- Modes: run separate `prefill`, `decode`, and `mixed` sweeps where supported
+- Modes: separate `prefill`, `decode`, and `mixed` sweeps
 
-The full default mesh has 8,960 rows (8 x 8 x 7 x 4 x 5). Start with a reduced mesh to validate the benchmark harness.
+The default mixed-mode mesh has 6,860 valid rows (7 non-zero decode batches x 7 non-zero chunks x 7 contexts x 4 KV settings x 5 repeats). Prefill-only and decode-only sweeps generate their corresponding boundary configurations separately. Start with a reduced mesh to validate the benchmark harness.
 
 ## Generate a template
 
@@ -45,7 +45,7 @@ The generated file is a **template**: `iteration_ms` is intentionally blank. Fil
 | `repeat` | Repeat index; optional |
 | `seed` | Benchmark seed/run identifier; optional |
 
-Keep execution modes separate. Do not combine prefill-only, decode-only, and mixed measurements under one mode label.
+The mesh generator enforces physically meaningful configurations: prefill-only rows have decode batch zero and a positive prefill chunk; decode-only rows have a positive decode batch and zero prefill chunk; mixed rows have both non-zero. Keep execution modes separate.
 
 ## Measurement recommendations
 
@@ -73,7 +73,7 @@ forest = RandomForestRuntimePredictor(summary, mode="mixed")
 latency_ms_rf = forest.predict_ms(8, 512, 8192, 32768, mode="mixed")
 ```
 
-`P99LookupPredictor` uses exact mesh matches when available and inverse-distance interpolation in log-feature space otherwise. `RandomForestRuntimePredictor` is an optional nonlinear regression baseline. Neither predictor guarantees accurate extrapolation outside the measured mesh; validate on held-out mesh points.
+`P99LookupPredictor` uses exact mesh matches when available and inverse-distance interpolation in log-feature space otherwise. It rejects requests for execution modes absent from the profile table. `RandomForestRuntimePredictor` is an optional nonlinear regression baseline and is trained only on the selected mode. Neither predictor guarantees accurate extrapolation outside the measured mesh; validate on held-out mesh points.
 
 ## Validation before scheduling claims
 

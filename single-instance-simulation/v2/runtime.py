@@ -51,24 +51,19 @@ class SyntheticCostModel:
         c = max(0, int(prefill_chunk_tokens))
         h = max(0, int(max_context_tokens))
         kv = max(0, int(kv_cache_tokens))
-
         decode_ms = 0.0
         if n:
             decode_ms = 7.5 + 0.82*n + 0.000075*n*h + 0.00000000035*n*h*h
-
         prefill_ms = 0.0
         if c:
             prefill_ms = 2.4 + 0.0135*c + 0.00000065*c*h + 0.00000000022*c*h*h
-
         interference_ms = 0.0
         if n and c:
             interference_ms = 1.0 + 0.0022*c*math.sqrt(n) + 0.035*n*math.log1p(h/1024.0)
-
         # Illustrative cache-pressure term, not a physical memory model.
         cache_pressure_ms = 0.000015*kv if n or c else 0.0
         return max(self.safety_floor_ms, decode_ms + prefill_ms + interference_ms + cache_pressure_ms)
 
-    # Backward-compatible V1-style method name.
     def predict(self, n_active: int, chunk: int, cached_context: int, mode: str = "mixed") -> float:
         return self.predict_ms(n_active, chunk, cached_context, 0, mode)
 
@@ -118,10 +113,11 @@ class P99LookupPredictor:
         )
         if np.any(point < 0):
             raise ValueError("runtime predictor inputs must be non-negative")
-        selected = self._by_mode.get(str(mode)) or self._by_mode.get("mixed")
-        if selected is None:
-            selected = next(iter(self._by_mode.values()))
-        targets, log_features, scale = selected
+        if str(mode) not in self._by_mode:
+            raise ValueError(
+                f"profiling table has no mode={mode!r}; do not substitute a different execution mode"
+            )
+        targets, log_features, scale = self._by_mode[str(mode)]
         log_point = np.log1p(point)
         distances = np.linalg.norm((log_features - log_point) / scale, axis=1)
         exact = np.flatnonzero(distances < 1e-12)
@@ -149,10 +145,11 @@ class RandomForestRuntimePredictor:
                 "RandomForestRuntimePredictor requires scikit-learn; install requirements-ml.txt"
             ) from exc
         table = profile_table.dropna(subset=required).copy()
+        self.mode = mode
         if "mode" in table.columns:
-            selected = table[table["mode"].astype(str) == mode]
-            if not selected.empty:
-                table = selected
+            table = table[table["mode"].astype(str) == mode]
+            if table.empty:
+                raise ValueError(f"profiling table has no mode={mode!r}; collect that execution mode separately")
         if len(table) < 4:
             raise ValueError("at least four valid profiling mesh rows are required")
         self.model = RandomForestRegressor(
@@ -172,6 +169,8 @@ class RandomForestRuntimePredictor:
         kv_cache_tokens: int = 0,
         mode: str = "mixed",
     ) -> float:
+        if str(mode) != self.mode:
+            raise ValueError(f"predictor was trained for mode={self.mode!r}, not mode={mode!r}")
         x = np.array(
             [[active_decode_batch, prefill_chunk_tokens, max_context_tokens, kv_cache_tokens]],
             dtype=float,
@@ -182,7 +181,6 @@ class RandomForestRuntimePredictor:
 
 
 def load_profile_csv(path: str | Path) -> pd.DataFrame:
-    """Load raw repeated measurements and validate the documented schema."""
     frame = pd.read_csv(path)
     missing = [c for c in PROFILE_REQUIRED if c not in frame.columns]
     if missing:
@@ -206,7 +204,6 @@ def load_profile_csv(path: str | Path) -> pd.DataFrame:
 
 
 def summarize_profile(frame: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate repeats to P50/P95/P99 and expose measurement variability."""
     missing = [c for c in PROFILE_REQUIRED if c not in frame.columns]
     if missing:
         raise ValueError(f"profiling frame missing columns: {missing}")
@@ -228,7 +225,6 @@ def summarize_profile(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def check_profile_consistency(summary: pd.DataFrame, cv_warning_threshold: float = 0.15) -> list[str]:
-    """Return warnings for noisy mesh points and sparse repeats."""
     messages: list[str] = []
     if "sample_count" in summary:
         sparse = summary[summary["sample_count"] < 3]
@@ -251,12 +247,21 @@ def generate_profiling_mesh(
     repeats: int = 5,
     mode: str = "mixed",
 ) -> pd.DataFrame:
-    """Create an empty, reproducible mesh template for hardware measurements."""
     if repeats < 1:
         raise ValueError("repeats must be >= 1")
+    if mode not in {"prefill", "decode", "mixed"}:
+        raise ValueError("mode must be one of: prefill, decode, mixed")
     rows = []
     for n in decode_batches:
         for c in chunks:
+            # Prefill-only: no active decode. Decode-only: no prefill chunk.
+            # Mixed: both decode and prefill must be present.
+            if mode == "prefill" and (int(n) != 0 or int(c) <= 0):
+                continue
+            if mode == "decode" and (int(n) <= 0 or int(c) != 0):
+                continue
+            if mode == "mixed" and (int(n) <= 0 or int(c) <= 0):
+                continue
             for h in contexts:
                 for kv in kv_cache_tokens:
                     for repeat in range(repeats):
@@ -270,6 +275,8 @@ def generate_profiling_mesh(
                             "seed": 20261113 + repeat,
                             "iteration_ms": np.nan,
                         })
+    if not rows:
+        raise ValueError(f"mesh has no valid configurations for mode={mode!r}; include zero/non-zero boundary values")
     return pd.DataFrame(rows)
 
 
@@ -278,7 +285,6 @@ def build_p99_table(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def warn_if_non_monotonic(summary: pd.DataFrame, metric: str = "p99_ms") -> list[str]:
-    """Diagnose, but do not reject, non-monotonic measured runtime surfaces."""
     messages: list[str] = []
     if metric not in summary:
         return [f"metric {metric!r} is absent; monotonicity check skipped"]
