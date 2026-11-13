@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from v2.runtime import (
     SyntheticCostModel,
     P99LookupPredictor,
+    RandomForestRuntimePredictor,
     generate_profiling_mesh,
     summarize_profile,
     load_profile_csv,
@@ -122,6 +123,29 @@ class RuntimeTests(unittest.TestCase):
         self.assertGreater(predictor.predict_ms(1, 256, 1024, 0, mode="mixed"), 15.0)
         with self.assertRaises(ValueError):
             predictor.predict_ms(1, 256, 1024, 0, mode="decode")
+
+    def test_random_forest_predictor_when_optional_dependency_is_available(self):
+        try:
+            import sklearn  # noqa: F401
+        except ImportError:
+            self.skipTest("scikit-learn is an optional dependency")
+        rows = []
+        for n in (1, 2):
+            for c in (128, 256):
+                rows.append({
+                    "active_decode_batch": n,
+                    "prefill_chunk_tokens": c,
+                    "max_context_tokens": 1024,
+                    "kv_cache_tokens": 0,
+                    "mode": "mixed",
+                    "p99_ms": 10.0 + n + c / 128,
+                })
+        predictor = RandomForestRuntimePredictor(pd.DataFrame(rows), mode="mixed")
+        first = predictor.predict_ms(1, 128, 1024, 0, mode="mixed")
+        second = predictor.predict_ms(1, 128, 1024, 0, mode="mixed")
+        self.assertEqual(first, second)
+        with self.assertRaises(ValueError):
+            predictor.predict_ms(1, 128, 1024, 0, mode="prefill")
 
     def test_profile_csv_validation(self):
         frame = pd.DataFrame([{

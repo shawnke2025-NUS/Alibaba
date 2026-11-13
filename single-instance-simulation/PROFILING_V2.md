@@ -73,7 +73,7 @@ forest = RandomForestRuntimePredictor(summary, mode="mixed")
 latency_ms_rf = forest.predict_ms(8, 512, 8192, 32768, mode="mixed")
 ```
 
-`P99LookupPredictor` uses exact mesh matches when available and inverse-distance interpolation in log-feature space otherwise. It rejects requests for execution modes absent from the profile table. `RandomForestRuntimePredictor` is an optional nonlinear regression baseline and is trained only on the selected mode. Neither predictor guarantees accurate extrapolation outside the measured mesh; validate on held-out mesh points.
+`P99LookupPredictor` uses exact mesh matches when available and inverse-distance interpolation in log-feature space otherwise. It rejects requests for execution modes absent from the profile table. `RandomForestRuntimePredictor` is trained only on the selected mode; at inference it snaps each feature to the nearest measured axis value in log space and caches predictions to control scheduling overhead. It is a mesh-based surrogate, not a guarantee of continuous interpolation. Neither predictor guarantees accurate extrapolation outside the measured mesh; validate on held-out mesh points.
 
 ## Validation before scheduling claims
 

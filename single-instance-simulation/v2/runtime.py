@@ -1,8 +1,4 @@
-"""Runtime cost models and profiling-data utilities.
-
-The analytical model in this module is synthetic. Hardware claims must be based
-on a measured CSV accepted by load_profile_csv.
-"""
+"""Runtime cost models and profiling-data utilities."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -60,7 +56,6 @@ class SyntheticCostModel:
         interference_ms = 0.0
         if n and c:
             interference_ms = 1.0 + 0.0022*c*math.sqrt(n) + 0.035*n*math.log1p(h/1024.0)
-        # Illustrative cache-pressure term, not a physical memory model.
         cache_pressure_ms = 0.000015*kv if n or c else 0.0
         return max(self.safety_floor_ms, decode_ms + prefill_ms + interference_ms + cache_pressure_ms)
 
@@ -114,9 +109,7 @@ class P99LookupPredictor:
         if np.any(point < 0):
             raise ValueError("runtime predictor inputs must be non-negative")
         if str(mode) not in self._by_mode:
-            raise ValueError(
-                f"profiling table has no mode={mode!r}; do not substitute a different execution mode"
-            )
+            raise ValueError(f"profile table has no mode={mode!r}; do not substitute a different execution mode")
         targets, log_features, scale = self._by_mode[str(mode)]
         log_point = np.log1p(point)
         distances = np.linalg.norm((log_features - log_point) / scale, axis=1)
@@ -131,7 +124,7 @@ class P99LookupPredictor:
 
 
 class RandomForestRuntimePredictor:
-    """Optional scikit-learn predictor trained on aggregated P99 profiling rows."""
+    """Optional Random Forest P99 predictor, snapped to measured mesh axes."""
 
     def __init__(self, profile_table: pd.DataFrame, random_state: int = 42, mode: str = "mixed") -> None:
         required = PROFILE_KEYS + ["p99_ms"]
@@ -152,14 +145,16 @@ class RandomForestRuntimePredictor:
                 raise ValueError(f"profiling table has no mode={mode!r}; collect that execution mode separately")
         if len(table) < 4:
             raise ValueError("at least four valid profiling mesh rows are required")
+        self._feature_axes = [np.unique(table[col].to_numpy(dtype=float)) for col in PROFILE_KEYS]
         self.model = RandomForestRegressor(
-            n_estimators=300,
+            n_estimators=64,
             min_samples_leaf=1,
             max_features=1.0,
             random_state=random_state,
-            n_jobs=-1,
+            n_jobs=1,
         )
         self.model.fit(table[PROFILE_KEYS].to_numpy(dtype=float), table["p99_ms"].to_numpy(dtype=float))
+        self._prediction_cache: dict[tuple[int, int, int, int], float] = {}
 
     def predict_ms(
         self,
@@ -171,13 +166,20 @@ class RandomForestRuntimePredictor:
     ) -> float:
         if str(mode) != self.mode:
             raise ValueError(f"predictor was trained for mode={self.mode!r}, not mode={mode!r}")
-        x = np.array(
-            [[active_decode_batch, prefill_chunk_tokens, max_context_tokens, kv_cache_tokens]],
-            dtype=float,
-        )
-        if np.any(x < 0):
+        raw = (active_decode_batch, prefill_chunk_tokens, max_context_tokens, kv_cache_tokens)
+        if any(float(value) < 0 for value in raw):
             raise ValueError("runtime predictor inputs must be non-negative")
-        return max(0.01, float(self.model.predict(x)[0]))
+        # Snap to nearest measured axis in log space. Cache reduces online overhead.
+        snapped = []
+        for axis, value in zip(self._feature_axes, raw):
+            nearest_index = int(np.argmin(np.abs(np.log1p(axis) - np.log1p(float(value)))))
+            snapped.append(int(axis[nearest_index]))
+        key = tuple(snapped)
+        if key not in self._prediction_cache:
+            self._prediction_cache[key] = max(
+                0.01, float(self.model.predict(np.array([key], dtype=float))[0])
+            )
+        return self._prediction_cache[key]
 
 
 def load_profile_csv(path: str | Path) -> pd.DataFrame:
@@ -254,8 +256,6 @@ def generate_profiling_mesh(
     rows = []
     for n in decode_batches:
         for c in chunks:
-            # Prefill-only: no active decode. Decode-only: no prefill chunk.
-            # Mixed: both decode and prefill must be present.
             if mode == "prefill" and (int(n) != 0 or int(c) <= 0):
                 continue
             if mode == "decode" and (int(n) <= 0 or int(c) != 0):
