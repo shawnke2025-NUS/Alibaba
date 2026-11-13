@@ -1,38 +1,45 @@
 # Alibaba — LLM Inference & Serving Research
 
-当前仓库包含单实例 LLM 推理调度建模与仿真研究材料。
+This repository contains research notes and simulation work for single-instance LLM serving. The original V1 implementation remains on `main`; V2 development is isolated on `v2-phase1-phase2`.
 
-## 单实例推理仿真
+## V2: Phase 1 + Phase 2
 
-- [项目总 README](single-instance-simulation/README.md)
-- [Python 仿真源码](single-instance-simulation/single_instance_sim.py)
-- [原始方案整理](single-instance-simulation/ORIGINAL_PLAN.md)
-- [实验汇总 CSV](single-instance-simulation/results/summary.csv)
-- [关键实验结论](single-instance-simulation/results/KEY_RESULTS.md)
+V2 focuses on simulator correctness and profiling-driven runtime modeling.
 
-### 曲线图
+- [V2 simulation README](single-instance-simulation/README.md)
+- [Modeling contract and metric definitions](single-instance-simulation/MODELING_V2.md)
+- [Profiling schema and protocol](single-instance-simulation/PROFILING_V2.md)
+- [V2 simulator entry point](single-instance-simulation/single_instance_sim.py)
+- [Automated tests](single-instance-simulation/tests/test_v2.py)
 
-- [Goodput](single-instance-simulation/results/goodput_rps.svg)
-- [P99 TTFT](single-instance-simulation/results/p99_ttft_ms.svg)
-- [P99 TPOT](single-instance-simulation/results/p99_tpot_ms.svg)
-- [Request throughput](single-instance-simulation/results/request_throughput_rps.svg)
-- [Mean chunk size](single-instance-simulation/results/mean_chunk_tokens.svg)
-- [GPU utilization proxy](single-instance-simulation/results/gpu_util_proxy.svg)
+### Data provenance
 
-### 论文阅读笔记
+The default `SyntheticCostModel` is an illustrative analytical stress model, not measured GPU performance. No real RTX 3090 / Qwen3-32B profiling data is included. To use measured runtime data, fill a profiling CSV using the documented schema, then run with `--predictor p99_lookup` or `--predictor random_forest`.
 
-- [DRLServe](single-instance-simulation/papers/DRLServe_notes.md)
-- [RAD & SLAI](single-instance-simulation/papers/RAD_SLAI_notes.md)
-- [SLOWEAVE](single-instance-simulation/papers/SLOWEAVE_notes.md)
+## Existing V1 material
 
-## 第三方源码
+V1 research notes, paper summaries, and original result curves are preserved on the `main` branch. The V2 branch retains the original paper-note directory and upstream LLMServingSim submodule.
 
-LLMServingSim 通过 Git submodule 固定到上游 commit。请使用：
+## Repository layout
 
-```bash
-git clone --recurse-submodules https://github.com/shawnke2025-NUS/Alibaba.git
+```text
+single-instance-simulation/
+├── papers/                     # V1 paper-reading notes
+├── results/                    # V1 synthetic result snapshots
+├── third_party/LLMServingSim/   # upstream submodule
+├── v2/
+│   ├── runtime.py               # synthetic/profile-driven predictors
+│   └── simulator.py             # corrected discrete-event simulator
+├── scripts/generate_profiling_mesh.py
+├── tests/test_v2.py
+├── single_instance_sim.py       # V2 CLI
+├── MODELING_V2.md
+└── PROFILING_V2.md
 ```
 
-## 数据声明
+Clone with submodules:
 
-仿真曲线与 CSV 来自合成请求 Trace 和解析式成本模型，不是 2×RTX 3090 / Qwen3-32B 的真实实测或 profiling。真实硬件结论需等待目标环境 profiling 校准。
+```bash
+git clone --recurse-submodules --branch v2-phase1-phase2 \
+  https://github.com/shawnke2025-NUS/Alibaba.git
+```
