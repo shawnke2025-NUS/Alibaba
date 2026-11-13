@@ -14,6 +14,7 @@ V2 在保留 V1 论文笔记、原始结果和 LLMServingSim submodule 的基础
 - 通过独立 Request 副本避免策略之间状态污染。
 - 明确 Throughput / Goodput 使用固定 offered-load window 作为分母，Drain 时间只用于完成已到达请求。
 - 输出 unfinished requests、queue wait、P99 ITL、P99 TPOT、P99 TTFT、iteration latency 等指标。
+- `goodput_attainment` 以所有到达请求为分母，避免未完成请求被排除造成的幸存者偏差。
 - `gpu_threshold` 明确标注为队列压力代理量，不冒充真实 GPU utilization。
 
 ### Phase 2 — Runtime Modeling
@@ -53,7 +54,7 @@ pip install -r requirements-ml.txt
 python single_instance_sim.py --horizon 45 --seeds 5 --out results_v2
 ```
 
-输出：`runs_v2.csv`（逐 seed 结果）和 `summary_v2.csv`（跨 seed 聚合结果）。
+输出：`runs_v2.csv`（逐 seed 结果）和 `summary_v2.csv`（跨 seed 均值、标准差和 Student-t 95% CI 半宽）。
 
 ## 运行自动化测试
 
@@ -97,7 +98,7 @@ python single_instance_sim.py \
 
 - 当前抽象每轮最多执行一个等待请求的 Prefill Chunk，并对所有 Active Decode 请求执行一次 Decode；尚未模拟真实引擎的多请求 Prefill Packing、抢占、Speculative Decoding 和精确 Paged-KV Block 管理。
 - `kv_cache_peak_tokens_proxy` 是 Token 数量代理量，不是显存字节或真实 KV block allocator。
-- `priority_deadline` 是简化 EDF-like 基线，不是 SLAI 原算法。
+- `priority_deadline` 是基于 TTFT 剩余 Slack 的简化 LSTF 基线，不是 SLAI 原算法。
 - `deadline_adaptive` 是基于 Runtime Predictor 的 slack-aware Chunk 规则，不是 SLOWEAVE 原算法复现。
 - 预测器不能保证测量网格之外的外推精度；必须使用 held-out mesh points 验证。
 

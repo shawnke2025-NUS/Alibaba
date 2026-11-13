@@ -30,8 +30,9 @@ def main() -> None:
 
     _, aggregate = run_experiments(args.horizon, args.seeds, args.out, predictor)
     columns = [
-        "workload", "policy", "p99_ttft_ms", "p99_tpot_ms", "p99_itl_ms",
-        "request_throughput_rps", "goodput_rps", "unfinished",
+        "workload", "policy", "p99_ttft_ms_mean", "p99_tpot_ms_mean", "p99_itl_ms_mean",
+        "request_throughput_rps_mean", "goodput_rps_mean", "goodput_attainment_mean",
+        "unfinished_mean", "goodput_rps_ci95_halfwidth",
     ]
     print(aggregate[columns].to_string(index=False))
     print(f"\nResults written to: {args.out}")

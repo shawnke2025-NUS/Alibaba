@@ -69,6 +69,13 @@ class SimulatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             simulate("low", "not-a-policy", 1)
 
+    def test_priority_deadline_policy_uses_request_slack(self):
+        trace = [Request(0, 0.0, 4096, 8), Request(1, 0.0, 512, 8)]
+        config = SimulationConfig(horizon_s=1.0, max_drain_s=30.0)
+        result = simulate("low", "priority_deadline", 1, config, FixedRuntime(), trace)
+        self.assertEqual(result["arrivals"], 2)
+        self.assertEqual(result["completed"], 2)
+
 
 class RuntimeTests(unittest.TestCase):
     def test_synthetic_cost_is_positive_and_monotonic_in_chunk(self):
